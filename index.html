@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>56 Card Game - 6 Players</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .glass {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+        body {
+            background: linear-gradient(45deg, #1a1c2e, #4a2b50);
+            min-height: 100vh;
+            color: white;
+        }
+        .card {
+            perspective: 1000px;
+            width: 70px;
+            height: 100px;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+        .card:hover {
+            transform: translateY(-10px);
+        }
+        .card-inner {
+            width: 100%;
+            height: 100%;
+            transform-style: preserve-3d;
+            transition: transform 0.5s;
+        }
+        .card.flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+        .card-front, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            flex-direction: column;
+        }
+        .card-front {
+            background: #2d364c;
+            transform: rotateY(180deg);
+        }
+        .card-back {
+            background: linear-gradient(135deg, #4a2b50, #1a1c2e);
+        }
+        .hearts, .diamonds { color: #ff5555; }
+        .spades, .clubs { color: #ffffff; }
+        
+        @media (max-width: 640px) {
+            .card {
+                width: 50px;
+                height: 70px;
+                font-size: 0.8rem;
+            }
+        }
+        .player-section {
+            transition: all 0.3s ease;
+        }
+        .active-player {
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            transform: scale(1.02);
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div id="app">
+        <div class="max-w-7xl mx-auto">
+            <!-- Player Selection -->
+            <div v-if="!gameStarted && !playerSelected" class="glass p-8 rounded-xl text-center">
+                <h1 class="text-4xl mb-6">56 Card Game</h1>
+                <div class="mb-6">
+                    <label class="block mb-2">Select Your Player Number (1-6):</label>
+                    <select v-model="selectedPlayerNum" class="glass px-4 py-2 rounded-lg">
+                        <option v-for="n in 6" :key="n" :value="n">Player {{n}}</option>
+                    </select>
+                </div>
+                <button @click="selectPlayer" class="glass px-8 py-3 rounded-lg hover:bg-white/30 transition text-xl">
+                    Join Game
+                </button>
+            </div>
+
+            <!-- Game Setup -->
+            <div v-if="playerSelected && !gameStarted" class="glass p-8 rounded-xl text-center">
+                <h2 class="text-2xl mb-4">Welcome Player {{selectedPlayerNum}}</h2>
+                <button @click="startGame" class="glass px-8 py-3 rounded-lg hover:bg-white/30 transition text-xl">
+                    Start Game
+                </button>
+            </div>
+
+            <!-- Game Board -->
+            <div v-if="gameStarted" class="space-y-4">
+                <!-- Score Board -->
+                <div class="glass p-4 rounded-xl mb-4">
+                    <h2 class="text-xl mb-4 text-center">Scores</h2>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div v-for="(score, index) in scores" :key="index" 
+                             class="text-center p-2 glass rounded-lg"
+                             :class="{'bg-white/30': currentPlayer === index}">
+                            <div>Player {{index + 1}}</div>
+                            <div class="text-2xl">{{score}}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Game Status -->
+                <div class="glass p-4 rounded-xl text-center mb-4">
+                    <h3 class="text-xl">Current Player: {{currentPlayer + 1}}</h3>
+                    <p class="text-lg mt-2">{{gameStatus}}</p>
+                </div>
+
+                <!-- Center Pile -->
+                <div class="glass p-4 rounded-xl mb-4">
+                    <h3 class="text-center mb-4">Center Pile</h3>
+                    <div class="flex justify-center gap-2 flex-wrap">
+                        <div v-for="(card, index) in centerPile" :key="index" class="card">
+                            <div class="card-inner">
+                                <div class="card-front glass">
+                                    <span :class="card.suit">{{card.value}}</span>
+                                    <span :class="card.suit">{{getSuitSymbol(card.suit)}}</span>
+                                </div>
+                                <div class="card-back"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Player's Hand (only shown to the respective player) -->
+                <div v-if="currentPlayer === selectedPlayerNum - 1" 
+                     class="glass p-4 rounded-xl player-section" 
+                     :class="{'active-player': true}">
+                    <h3 class="text-center mb-4">Your Hand</h3>
+                    <div class="flex justify-center gap-2 flex-wrap">
+                        <div v-for="(card, index) in playerHands[currentPlayer]" 
+                             @click="playCard(index)"
+                             :key="index"
+                             class="card flipped">
+                            <div class="card-inner">
+                                <div class="card-front glass">
+                                    <span :class="card.suit">{{card.value}}</span>
+                                    <span :class="card.suit">{{getSuitSymbol(card.suit)}}</span>
+                                </div>
+                                <div class="card-back"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Other Players' Card Counts -->
+                <div v-else class="glass p-4 rounded-xl">
+                    <h3 class="text-center mb-4">Other Players' Cards</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div v-for="(hand, index) in playerHands" 
+                             :key="index"
+                             v-if="index !== selectedPlayerNum - 1"
+                             class="text-center p-2">
+                            <div>Player {{index + 1}}</div>
+                            <div>Cards: {{hand.length}}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pass Turn Button (only shown to current player) -->
+                <div v-if="currentPlayer === selectedPlayerNum - 1" class="text-center mt-4">
+                    <button @click="passTurn" class="glass px-6 py-2 rounded-lg hover:bg-white/30 transition">
+                        Pass Turn
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    gameStarted: false,
+                    playerSelected: false,
+                    selectedPlayerNum: 1,
+                    numPlayers: 6,
+                    deck: [],
+                    playerHands: [],
+                    scores: [],
+                    currentPlayer: 0,
+                    centerPile: [],
+                    gameStatus: '',
+                    suits: ['hearts', 'diamonds', 'spades', 'clubs'],
+                    values: ['9', '10', 'J', 'Q', 'K', 'A']
+                }
+            },
+            methods: {
+                selectPlayer() {
+                    this.playerSelected = true;
+                },
+                getSuitSymbol(suit) {
+                    const symbols = {
+                        'hearts': '♥',
+                        'diamonds': '♦',
+                        'spades': '♠',
+                        'clubs': '♣'
+                    };
+                    return symbols[suit];
+                },
+                createDeck() {
+                    const deck = [];
+                    // Creating two sets of each card
+                    for (let set = 0; set < 2; set++) {
+                        for (const suit of this.suits) {
+                            for (const value of this.values) {
+                                deck.push({ suit, value });
+                                deck.push({ suit, value });
+                            }
+                        }
+                    }
+                    return deck;
+                },
+                shuffleDeck(deck) {
+                    for (let i = deck.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [deck[i], deck[j]] = [deck[j], deck[i]];
+                    }
+                    return deck;
+                },
+                dealCards() {
+                    this.playerHands = [];
+                    for (let i = 0; i < this.numPlayers; i++) {
+                        const hand = this.deck.splice(0, 8);
+                        this.playerHands.push(hand);
+                    }
+                },
+                startGame() {
+                    this.deck = this.createDeck();
+                    this.deck = this.shuffleDeck(this.deck);
+                    this.scores = new Array(this.numPlayers).fill(0);
+                    this.dealCards();
+                    this.gameStarted = true;
+                    this.currentPlayer = 0;
+                    this.centerPile = [];
+                    this.gameStatus = 'Select a card to play or pass';
+                },
+                playCard(index) {
+                    const card = this.playerHands[this.currentPlayer][index];
+                    this.playerHands[this.currentPlayer].splice(index, 1);
+                    this.centerPile.push(card);
+                    this.checkMatches();
+                    if (this.playerHands[this.currentPlayer].length === 0) {
+                        this.endGame();
+                        return;
+                    }
+                    this.nextPlayer();
+                },
+                checkMatches() {
+                    if (this.centerPile.length >= 2) {
+                        const lastCard = this.centerPile[this.centerPile.length - 1];
+                        const secondLastCard = this.centerPile[this.centerPile.length - 2];
+                        
+                        if (lastCard.value === secondLastCard.value) {
+                            this.scores[this.currentPlayer] += 2;
+                            this.centerPile = [];
+                            this.gameStatus = `Player ${this.currentPlayer + 1} scored 2 points!`;
+                        }
+                    }
+                },
+                passTurn() {
+                    this.nextPlayer();
+                    this.gameStatus = `Player ${this.currentPlayer + 1}'s turn`;
+                },
+                nextPlayer() {
+                    this.currentPlayer = (this.currentPlayer + 1) % this.numPlayers;
+                },
+                endGame() {
+                    const winner = this.scores.indexOf(Math.max(...this.scores));
+                    this.gameStatus = `Game Over! Player ${winner + 1} wins with ${this.scores[winner]} points!`;
+                    setTimeout(() => {
+                        if (confirm('Play again?')) {
+                            this.startGame();
+                        }
+                    }, 1500);
+                }
+            }
+        }).mount('#app')
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
